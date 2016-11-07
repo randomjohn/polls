@@ -11,14 +11,14 @@ library(curl)
 library(shinystan)
 library(rmarkdown)
 
-setwd("~/GitHub/polls")
+#setwd("~/GitHub/polls")
 
 ####################
 # Useful functions #
 ####################
 
 corr_matrix <- function(m){
-    (diag(m)^-.5 * diag(nrow = nrow(m))) %*% m %*% (diag(m)^-.5 * diag(nrow = nrow(m))) 
+    (diag(m)^-.5 * diag(nrow = nrow(m))) %*% m %*% (diag(m)^-.5 * diag(nrow = nrow(m)))
 }
 
 cov_matrix <- function(n, sigma2, rho){
@@ -46,24 +46,24 @@ state_name <- datasets::state.name
 names(state_name) <- datasets::state.abb
 
 # Note that URLS are formed differently for CA and FL
-stubs <- state_name[-(which(names(state_name) %in% c("CA", "FL", "DC")))] %>% 
-    tolower %>% sub(" ", "-", .) %>% 
+stubs <- state_name[-(which(names(state_name) %in% c("CA", "FL", "DC")))] %>%
+    tolower %>% sub(" ", "-", .) %>%
     paste("2016", ., "president-trump-vs-clinton", sep = "-")
 
 stubs <- c("2016-general-election-trump-vs-clinton",
-           stubs, 
+           stubs,
            "2016-california-presidential-general-election-trump-vs-clinton",
            "2016-florida-presidential-general-election-trump-vs-clinton")
 
-names(stubs) <- c("--", 
-                  names(state_name[-(which(names(state_name) %in% c("CA", "FL", "DC")))]), 
+names(stubs) <- c("--",
+                  names(state_name[-(which(names(state_name) %in% c("CA", "FL", "DC")))]),
                   "CA", "FL")
 
 stubs <- stubs[order(names(stubs))]
 
 download_csv <- function(stub){
     url <- paste("http://elections.huffingtonpost.com/pollster/", stub, ".csv", sep = "")
-    connection <- curl(url, "r") 
+    connection <- curl(url, "r")
     df <- read.csv(connection, stringsAsFactors = FALSE)
     close(connection)
     message("Downloaded ", url)
@@ -83,7 +83,7 @@ write.csv(all_polls, "all_polls.csv")
 # Cleaning up downloaded polling data / creating variables #
 ############################################################
 
-df <- all_polls %>% 
+df <- all_polls %>%
     tbl_df %>%
     rename(pop = number.of.observations,
            vtype = population,
@@ -93,8 +93,8 @@ df <- all_polls %>%
            t = end - (1 + as.numeric(end-begin)) %/% 2,
            entry_date = entry.date.time..et. %>% substr(1,10) %>% as.Date) %>%
     filter(t >= start_date & !is.na(t)
-           & (vtype == "Likely Voters" | 
-                  vtype == "Registered Voters" | 
+           & (vtype == "Likely Voters" |
+                  vtype == "Registered Voters" |
                   vtype == "Adults") # This is to get rid of rows showing disaggregated polls by party ID.
            & pop > 1) %>%
     mutate(pollster = str_extract(pollster, pattern = "[A-z0-9 ]+") %>% sub("\\s+$", "", .),
@@ -102,30 +102,30 @@ df <- all_polls %>%
            pollster = replace(pollster, pollster == "WashPost", "Washington Post"),
            pollster = replace(pollster, pollster == "ABC News", "ABC"),
            undecided = ifelse(is.na(undecided), 0, undecided),
-           other = ifelse(is.na(other), 0, other) + 
-               ifelse(is.na(johnson), 0, johnson) + 
+           other = ifelse(is.na(other), 0, other) +
+               ifelse(is.na(johnson), 0, johnson) +
                ifelse(is.na(mcmullin), 0, mcmullin),
            sum = clinton + trump,
            week = floor_date(t, unit = "week"),
            day_of_week = as.integer(format(t, format = "%w")),
            # Trick to keep "likely voter" polls when multiple results are reported.
-           polltype = as.integer(as.character(recode(vtype, "Likely Voters" = "0", 
+           polltype = as.integer(as.character(recode(vtype, "Likely Voters" = "0",
                                                      "Registered Voters" = "1",
-                                                     "Adults" = "2"))), 
+                                                     "Adults" = "2"))),
            n_clinton = round(pop * clinton/100),
            # Only looking at trump or clinton voters, leaving 3rd party candidates and undecided voters out for now.
            n_respondents = round(pop*(clinton+trump)/100),
            p_clinton = clinton/(clinton+trump),
            # Numerical indices passed to Stan for states, days, weeks, pollsters
-           index_s = as.numeric(as.factor(as.character(state))), 
+           index_s = as.numeric(as.factor(as.character(state))),
            # Factors are alphabetically sorted: 1 = --, 2 = AL, 3 = AK, 4 = AZ...
            index_t = 1 + as.numeric(t) - min(as.numeric(t)),
            index_w = as.numeric(as.factor(week)),
            index_p = as.numeric(as.factor(as.character(pollster))))  %>%
-    arrange(state, t, polltype, sum) %>% 
+    arrange(state, t, polltype, sum) %>%
     distinct(state, t, pollster, .keep_all = TRUE) %>%
-    select(state, t, begin, end, entry_date, pollster, polltype, method, 
-           p_clinton, n_respondents, n_clinton, week, day_of_week, starts_with("index_")) 
+    select(state, t, begin, end, entry_date, pollster, polltype, method,
+           p_clinton, n_respondents, n_clinton, week, day_of_week, starts_with("index_"))
 
 print("New polls today:")
 df %>% filter(entry_date >= Sys.Date()-1) %>% select(-polltype, -t, -method, -n_clinton)
@@ -142,22 +142,22 @@ df$overlap_with_prev <- TRUE
 while(any(df$overlap_with_prev == TRUE)){
     # Recursively drop polls if their dates overlap
     # Perhaps not the most efficient way, but it gets the job done, and the data frame is small.
-    df <- df %>% 
+    df <- df %>%
         arrange(state, pollster, t) %>%
-        group_by(state, pollster) %>% 
-        mutate(end_prev_poll = lag(end), 
-               overlap_with_prev = ifelse(!is.na(end_prev_poll), 
+        group_by(state, pollster) %>%
+        mutate(end_prev_poll = lag(end),
+               overlap_with_prev = ifelse(!is.na(end_prev_poll),
                                           end_prev_poll > begin,
                                           FALSE),
-               overlap_with_next = ifelse(!is.na(lead(overlap_with_prev)), 
-                                          lead(overlap_with_prev), 
+               overlap_with_next = ifelse(!is.na(lead(overlap_with_prev)),
+                                          lead(overlap_with_prev),
                                           FALSE),
-               latest_overlap = overlap_with_prev == TRUE & 
+               latest_overlap = overlap_with_prev == TRUE &
                    overlap_with_next == FALSE,
                # Drop all polls which overlap with next poll
-               #                              if   next poll is the most recent (latest) poll 
+               #                              if   next poll is the most recent (latest) poll
                #                                   in the series of overlapping polls.
-               drop_poll = (overlap_with_next == TRUE & 
+               drop_poll = (overlap_with_next == TRUE &
                                 (lead(latest_overlap) == TRUE | is.na(lead(latest_overlap))))
         ) %>%
         filter(drop_poll == FALSE) %>%
@@ -186,8 +186,8 @@ all_t_until_election <- min(all_t) + days(0:(election_day - min(all_t)))
 #                               (3) get state_names and EV        #
 ###################################################################
 
-states2012 <- read.csv("2012.csv", 
-                       header = TRUE, stringsAsFactors = FALSE) %>% 
+states2012 <- read.csv("2012.csv",
+                       header = TRUE, stringsAsFactors = FALSE) %>%
     mutate(score = obama_count / (obama_count + romney_count),
            national_score = sum(obama_count)/sum(obama_count + romney_count),
            diff_score = score - national_score,
@@ -224,9 +224,9 @@ natpolls_indices <- data.frame(unique_ts = unique_ts,
                                unique_ws = sapply(unique_ts, function(i) unique(df$index_w[df$index_t == i])))
 
 
-df$index_t_unique <- sapply(1:nrow(df), 
-                            function(i) ifelse(df$state[i] == "--", 
-                                               which(natpolls_indices$unique_ts == df$index_t[i]), 
+df$index_t_unique <- sapply(1:nrow(df),
+                            function(i) ifelse(df$state[i] == "--",
+                                               which(natpolls_indices$unique_ts == df$index_t[i]),
                                                0))
 
 ###################
@@ -242,7 +242,7 @@ mu_b_prior <- logit(0.486 + c("--" = 0, prior_diff_score))
 # Several solid red states still hadn't been polled, the weighted average of state polls was slightly more pro-Clinton than national polls.
 
 score_among_polled <- sum(states2012[all_polled_states[-1],]$obama_count)/
-    sum(states2012[all_polled_states[-1],]$obama_count + 
+    sum(states2012[all_polled_states[-1],]$obama_count +
             states2012[all_polled_states[-1],]$romney_count)
 alpha_prior <- log(states2012$national_score[1]/score_among_polled)
 
@@ -257,7 +257,7 @@ sigma_poll_error <- cov_matrix(length(mu_b_prior) - 1, 0.04^2, .7) # about 1% sd
 # Passing the data to Stan and running the model #
 ##################################################
 
-out <- stan("state and national polls.stan", 
+out <- stan("state and national polls.stan",
             data = list(N = nrow(df),                  # Number of polls
                         S = max(df$index_s),           # Number of states
                         T = length(all_t_until_election),           # Number of days
@@ -265,7 +265,7 @@ out <- stan("state and national polls.stan",
                         P = max(df$index_p),           # Number of pollsters
                         last_poll_T = length(all_t),
                         last_poll_W = length(all_weeks),
-                        T_unique = max(df$index_t_unique), 
+                        T_unique = max(df$index_t_unique),
                         t_unique = df$index_t_unique,
                         unique_ts = natpolls_indices$unique_ts,
                         unique_ws = natpolls_indices$unique_ws,
@@ -285,10 +285,10 @@ out <- stan("state and national polls.stan",
                         day_of_week = as.numeric(format(all_t, format = "%w"))),
             chains = 4, iter = 2000)
 
-stan_summary <- capture.output(print(out, pars = c("alpha", "sigma_c", 
+stan_summary <- capture.output(print(out, pars = c("alpha", "sigma_c",
                                                    "sigma_u_state", "sigma_u_national",
                                                    "sigma_walk_a_past", "sigma_walk_b_past",
-                                                   paste("mu_b[33,", as.character(2:max(df$index_s)),"]", 
+                                                   paste("mu_b[33,", as.character(2:max(df$index_s)),"]",
                                                          sep =""))))
 stan_summary
 
@@ -309,7 +309,7 @@ sigma_u_state <- rstan::extract(out, pars = "sigma_u_state")[[1]]
 sigma_u_national <- rstan::extract(out, pars = "sigma_u_national")[[1]]
 poll_error <- rstan::extract(out, pars = "poll_error")[[1]]
 
-dates <- sort(c(all_t[all_t <= all_weeks[length(all_weeks)]], 
+dates <- sort(c(all_t[all_t <= all_weeks[length(all_weeks)]],
                 unique(setdiff(all_weeks_until_election + days(3), all_weeks + days(3)))))
 dates <- c(dates[-length(dates)], election_day)
 # dates = all dates until last Sunday; followed by:       # for mu_a daily + interpolated mu_b weekly components
@@ -345,15 +345,15 @@ w_before <- days_after/(days_before + days_after)
 w_after <-  days_before/(days_before + days_after)
 w <- data.frame(w = c(w_before, w_after), t = c(before, after))
 
-interpolated_rows <- pred %>% filter(t == before | t == after) %>% 
-    left_join(w, by = "t") %>% 
+interpolated_rows <- pred %>% filter(t == before | t == after) %>%
+    left_join(w, by = "t") %>%
     group_by(state) %>%
-    summarize(p = weighted.mean(p, w), 
-              p_sd = weighted.mean(p_sd, w), 
-              high = weighted.mean(high, w), 
-              low = weighted.mean(low, w), 
-              clinton_win = weighted.mean(clinton_win, w)) %>% 
-    mutate(t = now) 
+    summarize(p = weighted.mean(p, w),
+              p_sd = weighted.mean(p_sd, w),
+              high = weighted.mean(high, w),
+              low = weighted.mean(low, w),
+              clinton_win = weighted.mean(clinton_win, w)) %>%
+    mutate(t = now)
 
 pred <- bind_rows(pred, interpolated_rows)
 
@@ -429,12 +429,12 @@ p_subset <- p[sample(1:nrow(p), 100, replace = FALSE),,]
 time_lastrun <- Sys.time()
 attributes(time_lastrun)$tzone <- Sys.timezone()
 
-last_polls <- df %>% 
-    arrange(desc(entry_date)) %>% 
+last_polls <- df %>%
+    arrange(desc(entry_date)) %>%
     filter(entry_date >= Sys.Date() -1) %>%
-    mutate(p_clinton = round(p_clinton*100, 1), 
-           p_trump = 100-p_clinton, 
-           N=n_respondents) %>% 
+    mutate(p_clinton = round(p_clinton*100, 1),
+           p_trump = 100-p_clinton,
+           N=n_respondents) %>%
     select(entry_date, pollster, state, p_clinton, p_trump, N)
 
 save(list = c("sim_forecast", "ev_state"), file = "last_sim.RData")
