@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r echo=FALSE, message=FALSE}
-setwd("~/GitHub/polls")
+setwd("C:/Users/johnd/OneDrive/learning/polls")
 knitr::read_chunk('graphs.R')
 ```
 
@@ -42,6 +42,8 @@ The Stan and R files are available [here](http://github.com/pkremp/polls).
 ```{r echo=FALSE, message=FALSE}
 <<plot_ev>>
 ```
+
+Clinton's expected EV count: `r sprintf("%5.1f",mean(result_ev_all_states))`.
 
 Note: the model does not account for the specific electoral vote allocation rules in place in Maine and Nebraska.
 
