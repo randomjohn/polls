@@ -442,7 +442,7 @@ ggplot(data = p_votecounts %>% filter(state != "DC")) +
 
 # Try with fig.width = 8, fig.height = 5.3
 
-quartz(height = 6.2, width = 5)
+#quartz(height = 6.2, width = 5)
 ggplot(data = p_votecounts %>% filter(state != "DC")) +
   geom_point(aes(x = p_state_decisive,
                  y = p_state_tied_when_decisive,
